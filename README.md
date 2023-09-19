@@ -1,2 +1,3 @@
 # BellmanFord SSSP in CUDA
-CUDA implementation of the Bellman-Ford algorithm for the Single-Source Shortest Path (SSSP) problem
+
+Here's the CUDA Bellman-Ford algorithm implementation for the Single-Source Shortest Path (SSSP) problem
