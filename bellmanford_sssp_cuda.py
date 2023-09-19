@@ -17,7 +17,7 @@ uploaded = files.upload()
 # # Write the modified CUDA code to a file
 # %%writefile bellman_ford_cuda.cu
 # 
-# #include <algorithm>
+# // Necessary headers for input-output operations, CUDA runtime, vectors, string manipulations, etc.
 # #include <cstdio>
 # #include <iostream>
 # #include <vector>
@@ -25,25 +25,29 @@ uploaded = files.upload()
 # #include <climits>
 # #include <cuda_runtime.h>
 # #include <sstream>
+# #include <algorithm>
 # 
 # using namespace std;
 # 
-# // CUDA kernel to perform edge relaxation.
+# // CUDA kernel to perform edge relaxation for the Bellman-Ford algorithm.
 # __global__ void bellmanFordKernel(int* d_V, int* d_E, int* d_W, int* d_dist, int V, int E) {
+#     // Calculate the global thread index.
 #     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+# 
+#     // Each thread processes one edge.
 #     if(idx < E) {
 #         int u = d_V[idx];
 #         int v = d_E[idx];
 #         int w = d_W[idx];
 # 
-#         // Check for possible overflow and perform relaxation only if it's safe.
+#         // Perform relaxation, but ensure we don't overflow.
 #         if (d_dist[u] != INT_MAX/2 && d_dist[u] + w < d_dist[v]) {
 #             atomicMin(&d_dist[v], d_dist[u] + w);
 #         }
 #     }
 # }
 # 
-# // Function to write shortest path distances to an output file.
+# // Function to write the shortest path distances to an output file.
 # void writeToFile(const vector<int> &distances, const char *filename) {
 #     ofstream outfile(filename);
 #     for (int distance : distances) {
@@ -52,7 +56,7 @@ uploaded = files.upload()
 #     outfile.close();
 # }
 # 
-# // Function to read graph from a .gr file, handling its specific format.
+# // Function to read a graph from a .gr file format.
 # void readGraphFromFile(const char *filename, vector<int> &V, vector<int> &E, vector<int> &W) {
 #     ifstream infile(filename);
 #     string line;
@@ -61,12 +65,13 @@ uploaded = files.upload()
 # 
 #     while (getline(infile, line)) {
 #         stringstream ss(line);
-#         ss >> c;  // Read the first character to determine the line type.
+#         ss >> c;  // Distinguish the line type by the first character.
 # 
-#         if (c == 'a') { // Only process lines that describe edges.
+#         // If the line describes an edge, process it.
+#         if (c == 'a') {
 #             ss >> u >> v >> w;
-#             V.push_back(u - 1);  // Convert 1-based index to 0-based.
-#             E.push_back(v - 1);  // Convert 1-based index to 0-based.
+#             V.push_back(u - 1);  // Convert from 1-based index in file to 0-based index for processing.
+#             E.push_back(v - 1);
 #             W.push_back(w);
 #         }
 #     }
@@ -75,50 +80,55 @@ uploaded = files.upload()
 # }
 # 
 # int main() {
+#     // Host vectors to store the vertices (V), edges (E), and weights (W) of the graph.
 #     vector<int> h_V, h_E, h_W;
 # 
-#     // Read graph from .gr format.
+#     // Read the graph data from the file.
 #     readGraphFromFile("USA-road-d.CAL.gr", h_V, h_E, h_W);
 # 
-#     int V = *max_element(h_V.begin(), h_V.end()) + 1; // Number of vertices
-#     int E = h_V.size(); // Number of edges
+#     // Calculate the number of vertices and edges from the data.
+#     int V = *max_element(h_V.begin(), h_V.end()) + 1;
+#     int E = h_V.size();
 # 
-#     vector<int> h_dist(V, INT_MAX/2); // Initialize distances.
-#     h_dist[0] = 0; // Source vertex (0-based index).
+#     // Initialize distances with a large but safe value to avoid overflow. Distance to source (vertex 0) is 0.
+#     vector<int> h_dist(V, INT_MAX/2);
+#     h_dist[0] = 0;
 # 
-#     // Allocate device memory.
+#     // Allocate memory on the GPU for vertices, edges, weights, and distances.
 #     int *d_V, *d_E, *d_W, *d_dist;
 #     cudaMalloc(&d_V, E * sizeof(int));
 #     cudaMalloc(&d_E, E * sizeof(int));
 #     cudaMalloc(&d_W, E * sizeof(int));
 #     cudaMalloc(&d_dist, V * sizeof(int));
 # 
-#     // Copy data to device.
+#     // Copy graph data from host to GPU.
 #     cudaMemcpy(d_V, h_V.data(), E * sizeof(int), cudaMemcpyHostToDevice);
 #     cudaMemcpy(d_E, h_E.data(), E * sizeof(int), cudaMemcpyHostToDevice);
 #     cudaMemcpy(d_W, h_W.data(), E * sizeof(int), cudaMemcpyHostToDevice);
 #     cudaMemcpy(d_dist, h_dist.data(), V * sizeof(int), cudaMemcpyHostToDevice);
 # 
+#     // Set up the CUDA kernel launch parameters.
 #     int threadsPerBlock = 256;
 #     int blocksPerGrid = (E + threadsPerBlock - 1) / threadsPerBlock;
 # 
-#     // Main loop for edge relaxation.
+#     // Launch the Bellman-Ford kernel V-1 times.
 #     for(int i = 0; i < V - 1; ++i) {
 #         bellmanFordKernel<<<blocksPerGrid, threadsPerBlock>>>(d_V, d_E, d_W, d_dist, V, E);
 #         cudaDeviceSynchronize();
 #     }
 # 
-#     // Copy results back to host.
+#     // Copy the computed shortest path distances from GPU back to host.
 #     cudaMemcpy(h_dist.data(), d_dist, V * sizeof(int), cudaMemcpyDeviceToHost);
 # 
-#     // Write results to an output file.
+#     // Write the shortest path distances to an output file.
 #     writeToFile(h_dist, "shortest_path_distances.txt");
 # 
-#     // Free device memory.
+#     // Free up the allocated GPU memory.
 #     cudaFree(d_V);
 #     cudaFree(d_E);
 #     cudaFree(d_W);
-#     cudaFree(d_dist);
+#     cudaFree(d);
+# 
 # 
 #     return 0;
 # }
@@ -128,3 +138,156 @@ uploaded = files.upload()
 
 # Read and print the output file.
 !cat shortest_path_distances.txt
+
+"""## Bellman-Ford Algorithm on CUDA: Code Walkthrough
+
+### Headers and Namespaces
+
+```cpp
+#include <cstdio>
+#include <iostream>
+#include <vector>
+#include <fstream>
+#include <climits>
+#include <cuda_runtime.h>
+#include <sstream>
+#include <algorithm>
+```
+
+We start by including necessary header files:
+- I/O operations (`<cstdio>`, `<iostream>`, `<fstream>`)
+- Common data structures (`<vector>`)
+- C++ utilities (`<climits>`, `<sstream>`, `<algorithm>`)
+- CUDA-specific operations (`<cuda_runtime.h>`)
+
+### CUDA Kernel
+
+```cpp
+__global__ void bellmanFordKernel(int* d_V, int* d_E, int* d_W, int* d_dist, int V, int E) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if(idx < E) {
+        int u = d_V[idx];
+        int v = d_E[idx];
+        int w = d_W[idx];
+        
+        if (d_dist[u] != INT_MAX/2 && d_dist[u] + w < d_dist[v]) {
+            atomicMin(&d_dist[v], d_dist[u] + w);
+        }
+    }
+}
+```
+
+This is the heart of the CUDA implementation: the kernel. Here's what each part does:
+
+1. Calculate the global thread index with `int idx = blockIdx.x * blockDim.x + threadIdx.x;`.
+2. Each thread is responsible for relaxing one edge. Thus, check if the current thread's index is within bounds (`idx < E`).
+3. Fetch the source vertex (`u`), destination vertex (`v`), and weight (`w`) for the edge the thread is responsible for.
+4. If the potential new distance to vertex `v` through vertex `u` is shorter, update it using `atomicMin`.
+
+### Helper Functions
+
+#### Writing to File
+
+```cpp
+void writeToFile(const vector<int> &distances, const char *filename) {
+    ofstream outfile(filename);
+    for (int distance : distances) {
+        outfile << distance << endl;
+    }
+    outfile.close();
+}
+```
+
+This function writes the calculated shortest-path distances to an output file. It simply iterates through the distances vector and writes each distance to a new line.
+
+#### Reading from File
+
+```cpp
+void readGraphFromFile(const char *filename, vector<int> &V, vector<int> &E, vector<int> &W) {
+    ifstream infile(filename);
+    string line;
+    int u, v, w;
+    char c;
+
+    while (getline(infile, line)) {
+        stringstream ss(line);
+        ss >> c;
+        
+        if (c == 'a') {
+            ss >> u >> v >> w;
+            V.push_back(u - 1);
+            E.push_back(v - 1);
+            W.push_back(w);
+        }
+    }
+
+    infile.close();
+}
+```
+
+This function reads the graph data from a `.gr` file format. It differentiates edge data lines by checking the starting character (`a`). It then pushes the vertices and weights to their respective vectors.
+
+### Main Function
+
+Inside the `main` function:
+
+1. **Reading the Graph**:
+
+    We declare vectors to hold vertices (`h_V`), edges (`h_E`), and weights (`h_W`), and then we read the graph data from a file.
+
+    ```cpp
+    vector<int> h_V, h_E, h_W;
+    readGraphFromFile("USA-road-d.CAL.gr", h_V, h_E, h_W);
+    ```
+
+2. **Initialize Distances**:
+
+    The number of vertices (`V`) and edges (`E`) are determined, and a vector to hold distances (`h_dist`) is initialized. The source vertex (vertex 0) is initialized with a distance of 0, while others are initialized to half the maximum possible value to avoid overflow.
+
+    ```cpp
+    int V = *max_element(h_V.begin(), h_V.end()) + 1;
+    int E = h_V.size();
+    vector<int> h_dist(V, INT_MAX/2);
+    h_dist[0] = 0;
+    ```
+
+3. **Memory Allocation & Data Transfer to GPU**:
+
+    Allocate GPU memory for vertices, edges, weights, and distances and then transfer the data from host to GPU.
+
+    ```cpp
+    int *d_V, *d_E, *d_W, *d_dist;
+    cudaMalloc(&d_V, E * sizeof(int));
+    // ... (similar for d_E, d_W, d_dist)
+    cudaMemcpy(d_V, h_V.data(), E * sizeof(int), cudaMemcpyHostToDevice);
+    // ... (similar for d_E, d_W, d_dist)
+    ```
+    
+4. **Kernel Execution**:
+
+    The Bellman-Ford algorithm is iterative, and the kernel is launched `V-1` times. Each iteration aims to further relax the edges.
+
+    ```cpp
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (E + threadsPerBlock - 1) / threadsPerBlock;
+    for(int i = 0; i < V - 1; ++i) {
+        bellmanFordKernel<<<blocksPerGrid, threadsPerBlock>>>(d_V, d_E, d_W, d_dist, V, E);
+        cudaDeviceSynchronize();
+    }
+    ```
+
+5. **Retrieve Results & Cleanup**:
+
+    We then copy the shortest path distances back to the host memory from the GPU and write these distances to an output file. Lastly, we free up the GPU memory.
+
+    ```cpp
+    cudaMemcpy(h_dist.data(), d_dist, V * sizeof(int), cudaMemcpyDeviceToHost);
+    writeToFile(h_dist, "shortest_path_distances.txt");
+    cudaFree(d_V);
+    // ... (similar for d_E, d_W, d_dist)
+    ```
+
+And that wraps up our CUDA implementation of the Bellman-Ford algorithm!
+"""
+
