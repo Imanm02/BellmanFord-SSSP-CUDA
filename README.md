@@ -17,7 +17,7 @@ Here's the CUDA Bellman-Ford algorithm implementation for the Single-Source Shor
 #include <algorithm>
 ```
 
-We start by including necessary header files:
+We start by including the necessary header files:
 - I/O operations (`<cstdio>`, `<iostream>`, `<fstream>`)
 - Common data structures (`<vector>`)
 - C++ utilities (`<climits>`, `<sstream>`, `<algorithm>`)
